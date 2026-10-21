@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BudgetFlow</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172b4d; background: #f4f7fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #102a43; color: white; padding: 1.25rem max(1.25rem, calc((100% - 1100px) / 2)); }
+    header h1 { margin: 0; font-size: 1.35rem; letter-spacing: .02em; }
+    header p { margin: .35rem 0 0; color: #cbd5e1; font-size: .9rem; }
+    main { max-width: 1100px; margin: 2rem auto; padding: 0 1.25rem 3rem; }
+    .status { min-height: 1.5rem; margin: 0 0 1rem; color: #475569; }
+    .status.error { color: #b42318; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card, section { background: white; border: 1px solid #e2e8f0; border-radius: .75rem; box-shadow: 0 2px 8px #102a430d; }
+    .card { padding: 1rem 1.15rem; }
+    .card h2 { margin: 0; color: #64748b; font-size: .82rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .card p { margin: .6rem 0 0; font-size: 1.4rem; font-weight: 700; }
+    .content { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 1rem; align-items: start; }
+    section { padding: 1.25rem; }
+    section h2 { margin: 0 0 1rem; font-size: 1.05rem; }
+    label { display: block; margin: .8rem 0 .3rem; color: #334155; font-size: .88rem; font-weight: 600; }
+    input, select, button { width: 100%; min-height: 2.65rem; border-radius: .45rem; font: inherit; }
+    input, select { border: 1px solid #cbd5e1; padding: .55rem .65rem; background: #fff; color: #172b4d; }
+    button { margin-top: 1rem; border: 0; background: #087e8b; color: #fff; font-weight: 700; cursor: pointer; }
+    button:hover { background: #066874; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: .9rem; }
+    th, td { padding: .7rem .5rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+    th { color: #64748b; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+    td.description { white-space: normal; min-width: 150px; }
+    .expense { color: #b42318; }
+    .income { color: #16803c; }
+    .empty { color: #64748b; text-align: center; padding: 1.5rem .5rem; }
+    @media (max-width: 760px) { main { margin-top: 1rem; } .content { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BudgetFlow</h1>
+    <p>Track income and expenses in your local platform lab.</p>
+  </header>
+  <main>
+    <p id="status" class="status" role="status" aria-live="polite">Loading your budget…</p>
+    <div id="summary" class="summary" aria-label="Budget summary"></div>
+    <div class="content">
+      <section aria-labelledby="new-entry-title">
+        <h2 id="new-entry-title">Add a transaction</h2>
+        <form id="transaction-form">
+          <label for="direction">Type</label>
+          <select id="direction" name="direction" required>
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+          <label for="amount">Amount</label>
+          <input id="amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required>
+          <label for="currency">Currency code</label>
+          <input id="currency" name="currency" type="text" minlength="3" maxlength="3" pattern="[A-Za-z]{3}" autocomplete="off" placeholder="e.g. ZAR" required>
+          <label for="category">Category</label>
+          <select id="category" name="category" required>
+            <option>Housing</option><option>Food</option><option>Transport</option><option>Bills</option><option>Health</option><option>Other</option>
+          </select>
+          <label for="description">Description</label>
+          <input id="description" name="description" type="text" maxlength="200" required>
+          <label for="occurred-on">Date</label>
+          <input id="occurred-on" name="occurred_on" type="date" required>
+          <button id="submit-button" type="submit">Save transaction</button>
+        </form>
+      </section>
+      <section aria-labelledby="transactions-title">
+        <h2 id="transactions-title">Recent transactions</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th>Amount</th></tr></thead>
+            <tbody id="transactions"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const statusMessage = document.querySelector("#status");
+    const summaryRoot = document.querySelector("#summary");
+    const transactionRoot = document.querySelector("#transactions");
+    const form = document.querySelector("#transaction-form");
+    const submitButton = document.querySelector("#submit-button");
+    function localDate() {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      return now.toISOString().slice(0, 10);
+    }
+    document.querySelector("#occurred-on").value = localDate();
+
+    function money(value, currency) {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value));
+    }
+
+    function showError(error) {
+      statusMessage.textContent = error instanceof Error ? error.message : "Something went wrong.";
+      statusMessage.classList.add("error");
+    }
+
+    async function request(path, options) {
+      const response = await fetch(path, options);
+      if (!response.ok) {
+        let detail = `Request failed (${response.status})`;
+        try { detail = (await response.json()).detail || detail; } catch (_) {}
+        throw new Error(detail);
+      }
+      return response.json();
+    }
+
+    function addSummaryCard(title, value) {
+      const card = document.createElement("article");
+      card.className = "card";
+      const heading = document.createElement("h2");
+      heading.textContent = title;
+      const amount = document.createElement("p");
+      amount.textContent = value;
+      card.append(heading, amount);
+      summaryRoot.append(card);
+    }
+
+    async function loadBudget() {
+      statusMessage.textContent = "Loading your budget…";
+      statusMessage.classList.remove("error");
+      const [summary, transactions] = await Promise.all([
+        request("/api/summary"),
+        request("/api/transactions?limit=50")
+      ]);
+
+      summaryRoot.replaceChildren();
+      for (const item of summary) {
+        addSummaryCard(`${item.currency} income`, money(item.income, item.currency));
+        addSummaryCard(`${item.currency} expenses`, money(item.expenses, item.currency));
+        addSummaryCard(`${item.currency} net`, money(item.net, item.currency));
+      }
+      if (summary.length === 0) addSummaryCard("No transactions yet", "Add your first entry");
+
+      transactionRoot.replaceChildren();
+      if (transactions.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.className = "empty";
+        cell.textContent = "Your transactions will appear here.";
+        row.append(cell);
+        transactionRoot.append(row);
+      }
+      for (const item of transactions) {
+        const row = document.createElement("tr");
+        const values = [item.occurred_on, item.direction, item.category, item.description, money(item.amount, item.currency)];
+        for (let index = 0; index < values.length; index += 1) {
+          const cell = document.createElement("td");
+          cell.textContent = values[index];
+          if (index === 1 || index === 4) cell.className = item.direction;
+          if (index === 3) cell.classList.add("description");
+          row.append(cell);
+        }
+        transactionRoot.append(row);
+      }
+      statusMessage.textContent = `${transactions.length} recent transaction${transactions.length === 1 ? "" : "s"} loaded.`;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submitButton.disabled = true;
+      statusMessage.classList.remove("error");
+      const values = new FormData(form);
+      const payload = Object.fromEntries(values.entries());
+      payload.currency = payload.currency.trim().toUpperCase();
+      payload.amount = Number(payload.amount).toFixed(2);
+      try {
+        await request("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        form.reset();
+        document.querySelector("#occurred-on").value = localDate();
+        await loadBudget();
+        statusMessage.textContent = "Transaction saved.";
+      } catch (error) {
+        showError(error);
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+    loadBudget().catch(showError);
+  </script>
+</body>
+</html>
