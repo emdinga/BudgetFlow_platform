@@ -40,6 +40,11 @@ jobs:
 
       - name: Build frontend image
         run: docker build --tag budgetflow-frontend:${{ github.sha }} ./frontend
+      
+      - name: Inspect Python package versions and pip SBOM
+        run: |
+          docker run --rm --entrypoint python budgetflow-api:${{ github.sha }} -c 'from importlib.metadata import version; [print(n, version(n)) for n in ("urllib3", "msgpack", "setuptools")]'
+          docker run --rm --entrypoint python budgetflow-api:${{ github.sha }} -c 'import json; p="/usr/local/lib/python3.14/site-packages/pip/_vendor/bom.cdx.json"; d=json.load(open(p)); [print(c.get("name"), c.get("version"), c.get("purl")) for c in d.get("components", [])]'
 
       - name: Scan backend image
         uses: aquasecurity/trivy-action@v0.36.0
