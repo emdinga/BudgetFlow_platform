@@ -15,6 +15,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
        "urllib3>=2.8.0" \
        "msgpack>=1.2.1" \
        "setuptools>=78.1.1"
+    && python -m pip uninstall -y pip
 
 COPY --chown=10001:10001 app ./app
 COPY --chown=10001:10001 migrations ./migrations
