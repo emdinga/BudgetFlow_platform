@@ -1,4 +1,4 @@
-FROM nginxinc/nginx-unprivileged:1.30.4-alpine3.24
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24
 
 USER root
 RUN apk upgrade --no-cache
