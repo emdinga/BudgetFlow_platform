@@ -40,11 +40,11 @@ jobs:
 
       - name: Build frontend image
         run: docker build --tag budgetflow-frontend:${{ github.sha }} ./frontend
-      
+
       - name: Inspect Python package versions and pip SBOM
         run: |
           docker run --rm --entrypoint python budgetflow-api:${{ github.sha }} -c 'from importlib.metadata import version; [print(n, version(n)) for n in ("urllib3", "msgpack", "setuptools")]'
-          
+
       - name: Scan backend image
         uses: aquasecurity/trivy-action@v0.36.0
         env:
@@ -68,3 +68,41 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+
+  publish:
+    name: publish images
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/emdinga/budgetflow-platform-api:latest
+            ghcr.io/emdinga/budgetflow-platform-api:${{ github.sha }}
+
+      - name: Publish frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ghcr.io/emdinga/budgetflow-platform-frontend:latest
+            ghcr.io/emdinga/budgetflow-platform-frontend:${{ github.sha }}
